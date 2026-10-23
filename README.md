@@ -51,10 +51,10 @@ Run a separate generated external-sort demonstration. Chunk size and merge fan-i
 python run_lab2.py --mode external --size 10000 --chunk-size 250 --merge-fan-in 8 --output-dir results
 ```
 
-Regenerate the report from the documented primary three-trial runs (1,000 and 3,000 items):
+Regenerate the report from the two integer runs and the transaction-record run (all three trials):
 
 ```powershell
-python run_lab2.py --mode report --output-dir results
+python run_lab2.py --mode report --output-dir results --report-csv benchmark_1000_seed2026_trials3.csv --report-csv benchmark_3000_seed2026_trials3.csv --report-csv benchmark_1000_records_seed2026_trials3.csv
 ```
 
 Select a different same-trial-count set explicitly by repeating `--report-csv` (filenames are relative to `--output-dir`):
@@ -63,7 +63,7 @@ Select a different same-trial-count set explicitly by repeating `--report-csv` (
 python run_lab2.py --mode report --output-dir results --report-csv benchmark_1000_seed2026_trials3.csv --report-csv benchmark_3000_seed2026_trials3.csv
 ```
 
-Report mode rejects mixed trial counts. One-trial exploratory CSVs are excluded by default.
+Report mode rejects mixed trial counts. With no `--report-csv` options it uses the two integer primary CSVs; one-trial exploratory CSVs and transaction data are excluded unless selected explicitly.
 
 The default workflow creates `results/benchmark_1000_seed2026_trials3.csv`, external demo input/output JSONL files, and `docs/Lab_2_Algorithmic_Engineering_Report.docx`. The CSV contains one row per algorithm and distribution, timing units, median runtime, Python allocation peak, optional counters, and status. A failed correctness check is recorded as failed without a timing.
 

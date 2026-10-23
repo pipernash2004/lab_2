@@ -19,8 +19,9 @@ def _table(rows):
         for edge in ("top", "left", "bottom", "right", "insideH", "insideV")) + '</w:tblBorders></w:tblPr>']
     for row in rows:
         xml.append('<w:tr>')
+        cell_width = 9360 // len(row)
         for cell in row:
-            xml.append('<w:tc><w:tcPr><w:tcW w:w="2400" w:type="dxa"/></w:tcPr>' + _paragraph(str(cell)) + '</w:tc>')
+            xml.append(f'<w:tc><w:tcPr><w:tcW w:w="{cell_width}" w:type="dxa"/></w:tcPr>' + _paragraph(str(cell)) + '</w:tc>')
         xml.append('</w:tr>')
     xml.append('</w:tbl>')
     return ''.join(xml)
@@ -53,7 +54,13 @@ def create_report(csv_paths, output_path):
     """Build a formal report containing actual timing tables for CSV inputs."""
     rows = []
     for path in csv_paths:
-        with open(path, newline="", encoding="utf-8") as handle: rows.extend(csv.DictReader(handle))
+        source_csv = Path(path)
+        input_type = "Transaction records" if "_records_" in source_csv.name else "Integer data"
+        with open(source_csv, newline="", encoding="utf-8") as handle:
+            for row in csv.DictReader(handle):
+                row["_input_type"] = input_type
+                row["_source_csv"] = source_csv.name
+                rows.append(row)
     valid = [row for row in rows if row["status"] == "ok"]
     if not valid: raise ValueError("report requires at least one verified benchmark row")
     sizes = sorted({int(row["input_size"]) for row in valid})
@@ -79,7 +86,7 @@ def create_report(csv_paths, output_path):
         ("1. Abstract", "This report implements and compares Merge Sort, two iterative Quick Sort partition schemes, Heap Sort, Python's Timsort baseline, an introsort-inspired adaptive hybrid, and JSON Lines external merge sort. The recorded results below come from correctness-checked benchmark runs generated on this machine. They are observations for the stated input sizes, not universal performance guarantees."),
         ("2. Introduction", "Sorting is a useful case study in algorithm engineering because asymptotic complexity, input structure, stability, memory use, and implementation overhead all affect practical choices."),
         ("3. Problem Definition and Requirements", "Each in-memory implementation accepts a list and optional key function. Transaction keys are lexicographic (timestamp, amount, merchant). Custom in-place algorithms mutate and return their list; Timsort returns a new list. Only Merge Sort and the built-in baseline promise stability."),
-        ("4. Methodology and Experimental Environment", f"Python {__import__('sys').version.split()[0]} on {platform.platform()} ({platform.machine()}); processor model was not recorded. Random seed 2026; measured sizes {', '.join(map(str, sizes))}; trial counts represented in the explicitly selected CSV files: {', '.join(map(str, trial_counts))}. The results table contains {len(valid)} correct rows from those selected files only. Timing uses time.perf_counter and reports the median of the configured trials. For transactions, correctness checks nondecreasing lexicographic keys and a multiset of canonical complete records; equal-key records may appear in any order for unstable algorithms. Peak memory uses tracemalloc separately from timings, so it is Python allocation peak rather than process RSS or an enforced limit. Comparison and fallback counters describe one timed run. Rows with different sizes, distributions, or trial counts are not direct timing comparisons."),
+        ("4. Methodology and Experimental Environment", f"Python {__import__('sys').version.split()[0]} on {platform.platform()} ({platform.machine()}); processor model was not recorded. Random seed(s) in the selected CSVs: {', '.join(sorted({row['seed'] for row in valid}))}; measured sizes {', '.join(map(str, sizes))}; trial counts represented: {', '.join(map(str, trial_counts))}. CSV files represented: {', '.join(dict.fromkeys(row['_source_csv'] for row in valid))}. The results table contains {len(valid)} correct rows from those selected files only. Timing uses time.perf_counter and reports the median of the configured trials. For transactions, correctness checks nondecreasing lexicographic keys and a multiset of canonical complete records; equal-key records may appear in any order for unstable algorithms. Peak memory uses tracemalloc separately from timings, so it is Python allocation peak rather than process RSS or an enforced limit. Comparison and fallback counters describe one timed run. Rows with different sizes, distributions, or trial counts are not direct timing comparisons."),
         ("5. Algorithm Design and Correctness Reasoning", "Merge Sort repeatedly merges sorted runs; by induction each merged interval is ordered, and choosing the left run on equal keys preserves stability. Lomuto places values <= pivot before its final pivot position. Hoare scans from both ends, swapping out-of-place values until the indices cross; the returned split places values no greater than the pivot on the left and no smaller values on the right, and the iterative ranges [lo, split] and [split+1, hi] strictly shrink. Heap Sort maintains the max-heap property and moves each maximum into its final suffix position. Timsort delegates to Python's stable built-in sort. The hybrid either returns an ordered/low-run merge of individually sorted runs, or applies these partition and base-case algorithms; its heap fallback handles ranges when the depth budget is spent."),
         ("6. Complexity Analysis and Proofs", "Merge Sort satisfies T(n)=2T(n/2)+Theta(n), hence Theta(n log n) time and Theta(n) auxiliary storage. Heap Sort is Theta(n log n) in all cases with O(1) extra storage. Quick Sort satisfies T(n)=T(k)+T(n-k-1)+Theta(n): balanced splits give Theta(n log n), while repeated extreme splits give Theta(n^2). The iterative implementation avoids call-stack overflow, but does not remove the quadratic work."),
         ("7. Hybrid Algorithm Design", "The hybrid detects monotone natural runs in O(n), reversing strictly descending runs. It first stores run descriptors in a list, so this step uses O(n) auxiliary space even when it later chooses partitioning. If there is one run, or at most max(8, n//32) runs, it merges those runs and returns; this takes O(n log r) time for r runs and O(n) merge storage. Otherwise it uses median-of-three pivots, insertion sort for partitions up to the configured threshold, and Heap Sort when a 2*floor(log2(n)) partition-depth budget is exhausted. Thus worst-case time remains O(n log n); partition-path auxiliary space is O(n) for descriptors plus O(log n) pending ranges. It is not stable as a whole because its partition path is not stable."),
@@ -97,15 +104,18 @@ def create_report(csv_paths, output_path):
         for paragraph in text.split("\n"):
             body.append(_paragraph(paragraph))
         if title.startswith("10."):
-            body.append(_table([["Size", "Dataset", "Algorithm", "Trials", "Median seconds", "Peak Python bytes"]] + [
-                [r["input_size"], r["dataset"], r["algorithm"], r["trials"], r["median_seconds"], r["peak_python_bytes"]]
+            body.append(_table([["Input Type", "Size", "Dataset", "Algorithm", "Trials", "Median seconds", "Peak Python bytes"]] + [
+                [r["_input_type"], r["input_size"], r["dataset"], r["algorithm"], r["trials"], r["median_seconds"], r["peak_python_bytes"]]
                 for r in valid]))
             body.append(_paragraph("Adversarial comparison-count summary", "Heading2"))
             summary = []
-            for size in sizes:
-                summary.append([size] + [next(r["comparisons"] for r in valid if int(r["input_size"]) == size and r["dataset"] == "adversarial" and r["algorithm"] == alg)
-                                          for alg in ("quick_lomuto", "quick_hoare", "hybrid_introsort")])
-            body.append(_table([["Size", "Lomuto comparisons", "Hoare comparisons", "Hybrid comparisons"]] + summary))
+            summary_groups = sorted({(row["_input_type"], int(row["input_size"])) for row in valid})
+            for input_type, size in summary_groups:
+                summary.append([input_type, size] + [next(r["comparisons"] for r in valid
+                    if r["_input_type"] == input_type and int(r["input_size"]) == size
+                    and r["dataset"] == "adversarial" and r["algorithm"] == alg)
+                    for alg in ("quick_lomuto", "quick_hoare", "hybrid_introsort")])
+            body.append(_table([["Input Type", "Size", "Lomuto comparisons", "Hoare comparisons", "Hybrid comparisons"]] + summary))
         if title.startswith("11."):
             body.append(_table([
                 ["Goal", "Suitable choice", "Trade-off / evidence"],
@@ -113,7 +123,7 @@ def create_report(csv_paths, output_path):
                 ["Worst-case bound with O(1) auxiliary space", "Heap Sort", "O(n log n) worst case; unstable and often slower in these small runs."],
                 ["General Python application", "Timsort baseline", "Stable built-in; measured as the practical reference, but Python runtime is not comparable to pure-Python loops."],
                 ["Study partition schemes", "Hoare Quick Sort", "Middle pivot avoids the tested ascending endpoint-pivot adversary; worst case still O(n^2) for other inputs."],
-                ["Educational adaptive hybrid", "Introsort-inspired hybrid", "Accepts low-count natural runs; otherwise uses insertion sort and tested Heap Sort fallback; O(n) space only on run-merge path."],
+                ["Educational adaptive hybrid", "Introsort-inspired hybrid", "Run descriptors require O(n) space on either path; merge path adds O(n) merge storage, partitioning uses O(log n) pending ranges beyond descriptors."],
             ]))
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
