@@ -1,0 +1,2 @@
+# Core project and test suite use only Python's standard library.
+# Optional dependency for creating the requested .docx report: python-docx>=1.1
