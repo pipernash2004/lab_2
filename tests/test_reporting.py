@@ -30,9 +30,17 @@ class ReportingTests(unittest.TestCase):
                 with path.open("w", newline="", encoding="utf-8") as handle:
                     writer = csv.DictWriter(handle, fieldnames=fields)
                     writer.writeheader()
+                    is_records = "_records_" in filename
                     for dataset in datasets:
                         for algorithm in algorithms:
-                            writer.writerow(dict(record, dataset=dataset, algorithm=algorithm))
+                            comparisons = 0
+                            if dataset == "adversarial":
+                                # Deliberately different observations at the same n
+                                # catch cross-type overwrites in report narratives.
+                                comparisons = (101 if is_records else 11) if algorithm == "quick_lomuto" else (
+                                    51 if is_records else 5) if algorithm == "quick_hoare" else 1
+                            writer.writerow(dict(record, dataset=dataset, algorithm=algorithm,
+                                                 comparisons=str(comparisons)))
                 csv_paths.append(path)
             output = create_report(csv_paths, root / "report.docx")
             with zipfile.ZipFile(output) as docx:
@@ -49,6 +57,10 @@ class ReportingTests(unittest.TestCase):
             self.assertIn("Integer data", text)
             self.assertIn("Transaction records", text)
             self.assertIn("0.000123456", text)
+            self.assertIn("Integer data, n=10: last-pivot Lomuto made 11 comparisons", text)
+            self.assertIn("Transaction records, n=10: last-pivot Lomuto made 101 comparisons", text)
+            self.assertIn("middle-pivot Hoare made 5 comparisons", text)
+            self.assertIn("middle-pivot Hoare made 51 comparisons", text)
             self.assertEqual(len(tables), 3)
             self.assertIn("word/footer1.xml", docx.namelist())
             self.assertIn(b"Heading1", styles)

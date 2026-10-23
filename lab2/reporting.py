@@ -65,19 +65,24 @@ def create_report(csv_paths, output_path):
     if not valid: raise ValueError("report requires at least one verified benchmark row")
     sizes = sorted({int(row["input_size"]) for row in valid})
     trial_counts = sorted({int(row["trials"]) for row in valid})
-    largest_size = max(sizes)
-    adversarial_rows = {row["algorithm"]: row for row in valid
-                        if int(row["input_size"]) == largest_size
-                        and row["dataset"] == "adversarial"}
-    lomuto_row = adversarial_rows["quick_lomuto"]
-    hoare_row = adversarial_rows["quick_hoare"]
-    adversarial_observation = (
-        f"At n={largest_size}, last-pivot Lomuto made {int(lomuto_row['comparisons']):,} comparisons "
-        f"in {float(lomuto_row['median_seconds']):.6f} s on ascending adversarial input; "
-        f"middle-pivot Hoare made {int(hoare_row['comparisons']):,} comparisons "
-        f"in {float(hoare_row['median_seconds']):.6f} s on the same dataset. "
-        "These are measurements from this run and machine, not general performance guarantees."
-    )
+    adversarial_groups = {}
+    for row in valid:
+        if row["dataset"] == "adversarial":
+            group = (row["_input_type"], int(row["input_size"]))
+            adversarial_groups.setdefault(group, {})[row["algorithm"]] = row
+    adversarial_observations = []
+    for (input_type, size), observations in sorted(adversarial_groups.items()):
+        if "quick_lomuto" not in observations or "quick_hoare" not in observations:
+            continue
+        lomuto_row, hoare_row = observations["quick_lomuto"], observations["quick_hoare"]
+        adversarial_observations.append(
+            f"{input_type}, n={size}: last-pivot Lomuto made "
+            f"{int(lomuto_row['comparisons']):,} comparisons in "
+            f"{float(lomuto_row['median_seconds']):.6f} s; middle-pivot Hoare made "
+            f"{int(hoare_row['comparisons']):,} comparisons in "
+            f"{float(hoare_row['median_seconds']):.6f} s."
+        )
+    adversarial_observation = " ".join(adversarial_observations)
     body = []
     body.append(_paragraph("Lab 2: Algorithmic Engineering", "Title"))
     body.append(_paragraph("Sorting Under Real-World Constraints", "Subtitle"))
@@ -90,7 +95,7 @@ def create_report(csv_paths, output_path):
         ("5. Algorithm Design and Correctness Reasoning", "Merge Sort repeatedly merges sorted runs; by induction each merged interval is ordered, and choosing the left run on equal keys preserves stability. Lomuto places values <= pivot before its final pivot position. Hoare scans from both ends, swapping out-of-place values until the indices cross; the returned split places values no greater than the pivot on the left and no smaller values on the right, and the iterative ranges [lo, split] and [split+1, hi] strictly shrink. Heap Sort maintains the max-heap property and moves each maximum into its final suffix position. Timsort delegates to Python's stable built-in sort. The hybrid either returns an ordered/low-run merge of individually sorted runs, or applies these partition and base-case algorithms; its heap fallback handles ranges when the depth budget is spent."),
         ("6. Complexity Analysis and Proofs", "Merge Sort satisfies T(n)=2T(n/2)+Theta(n), hence Theta(n log n) time and Theta(n) auxiliary storage. Heap Sort is Theta(n log n) in all cases with O(1) extra storage. Quick Sort satisfies T(n)=T(k)+T(n-k-1)+Theta(n): balanced splits give Theta(n log n), while repeated extreme splits give Theta(n^2). The iterative implementation avoids call-stack overflow, but does not remove the quadratic work."),
         ("7. Hybrid Algorithm Design", "The hybrid detects monotone natural runs in O(n), reversing strictly descending runs. It first stores run descriptors in a list, so this step uses O(n) auxiliary space even when it later chooses partitioning. If there is one run, or at most max(8, n//32) runs, it merges those runs and returns; this takes O(n log r) time for r runs and O(n) merge storage. Otherwise it uses median-of-three pivots, insertion sort for partitions up to the configured threshold, and Heap Sort when a 2*floor(log2(n)) partition-depth budget is exhausted. Thus worst-case time remains O(n log n); partition-path auxiliary space is O(n) for descriptors plus O(log n) pending ranges. It is not stable as a whole because its partition path is not stable."),
-        ("8. Adversarial Analysis and Defense", "Ascending input is adversarial to last-element Lomuto partitioning: each pivot is an endpoint, creating partitions of sizes 0 and n-1 and quadratic comparisons. " + adversarial_observation + " Hoare's middle pivot and the hybrid's run recognition avoid this particular failure mode; the hybrid also includes a tested heap fallback."),
+        ("8. Adversarial Analysis and Defense", "Ascending input is adversarial to last-element Lomuto partitioning: each pivot is an endpoint, creating partitions of sizes 0 and n-1 and quadratic comparisons. " + adversarial_observation + " These are measurements from this run and machine, not general performance guarantees. Hoare's middle pivot and the hybrid's run recognition avoid this particular failure mode; the hybrid also includes a tested heap fallback."),
         ("9. External Sorting and I/O Complexity", "The external sorter reads at most M records per chunk, sorts and serializes runs, then merges at most configured fan-in f streams while holding one head record/key per stream. With R=ceil(N/M) initial runs, it performs ceil(log_f R) merge passes. Under the standard external-memory model this gives O((N/B) * (1 + log_f(N/M))) block transfers; when f=Theta(M/B), it becomes the standard O((N/B) log_(M/B)(N/B)), assuming M >= 2B. This is a theoretical I/O-transfer bound, not a measurement of RAM use or elapsed time. Each stream uses a 64 KiB text buffer and one decoded record/key, with a few transient records while advancing; merge output has a further 64 KiB buffer. Completed old runs are deleted after each pass, so temporary disk holds at most roughly two generations, approximately 2D for serialized input size D. For illustration only, if average JSONL size were 128 bytes, 100 million records would be about 12.8 GB per copy and about 25.6 GB for two temporary generations, before source, final output, and safety headroom. Python object headers, key objects, JSON encoding, varying record sizes, and OS cache affect real memory/disk needs."),
         ("10. Experimental Results", "Verified median times in seconds for every generated result row follow. Each line corresponds to a separately benchmarked input size and distribution."),
         ("11. Analysis and Decision Matrix", "For stability choose Merge Sort or the built-in baseline. For worst-case time with constant auxiliary storage choose Heap Sort. For an easy high-performance baseline use Python Timsort. For demonstrating partition schemes use Quick Sort, while avoiding deterministic endpoint pivots on ordered input. The hybrid is the adaptive educational option, with a worst-case fallback and additional run detection."),
