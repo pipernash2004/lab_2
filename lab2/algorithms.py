@@ -239,11 +239,15 @@ def introsort(items: list[T], key: Key | None = None, *, insertion_threshold: in
     """Unstable introsort-inspired adaptive hybrid.
 
     Detects natural runs in O(n). Already ordered input and input with at most
-    max(8, n//32) runs are merged adaptively in O(n log r) time. Otherwise,
+    max(8, n//32) runs are merged adaptively in O(n log r) time. Run
+    descriptors are collected before this choice, so the partition/fallback
+    path also has O(n) auxiliary space for those descriptors, plus O(log n)
+    pending ranges. Otherwise,
     median-of-three quick partitions are used, insertion sort handles small
     ranges, and heapsort handles ranges that exhaust the 2*floor(log2(n))
-    budget (or caller-supplied budget). Worst-case O(n log n); accepted run
-    merging uses O(n) auxiliary space, otherwise partition stack is O(log n).
+    budget (or caller-supplied budget). Worst-case O(n log n); total auxiliary
+    space is O(n) on both paths because of run descriptors, plus O(n) merge
+    storage on the accepted run-merge path.
     """
     if insertion_threshold < 1: raise ValueError("insertion_threshold must be positive")
     n = len(items)

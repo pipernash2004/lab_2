@@ -43,17 +43,27 @@ Use transaction-like records:
 python run_lab2.py --mode benchmark --size 1000 --records
 ```
 
+Generated transaction records derive amount and merchant from timestamp, so repeated timestamps create full duplicate `(timestamp, amount, merchant)` keys while `record_id` remains unique. Record benchmark CSV names include `_records`.
+
 Run a separate generated external-sort demonstration. Chunk size and merge fan-in control bounded memory and merge passes:
 
 ```powershell
 python run_lab2.py --mode external --size 10000 --chunk-size 250 --merge-fan-in 8 --output-dir results
 ```
 
-Regenerate the report after benchmark CSVs exist:
+Regenerate the report from the documented primary three-trial runs (1,000 and 3,000 items):
 
 ```powershell
 python run_lab2.py --mode report --output-dir results
 ```
+
+Select a different same-trial-count set explicitly by repeating `--report-csv` (filenames are relative to `--output-dir`):
+
+```powershell
+python run_lab2.py --mode report --output-dir results --report-csv benchmark_1000_seed2026_trials3.csv --report-csv benchmark_3000_seed2026_trials3.csv
+```
+
+Report mode rejects mixed trial counts. One-trial exploratory CSVs are excluded by default.
 
 The default workflow creates `results/benchmark_1000_seed2026_trials3.csv`, external demo input/output JSONL files, and `docs/Lab_2_Algorithmic_Engineering_Report.docx`. The CSV contains one row per algorithm and distribution, timing units, median runtime, Python allocation peak, optional counters, and status. A failed correctness check is recorded as failed without a timing.
 
@@ -69,7 +79,7 @@ Input and output are UTF-8 JSON Lines. The sorter holds one chunk of at most `ch
 
 With N records, M records fitting in memory, B records per disk block, and configured merge fan-in f, the implementation uses O((N/B) * (1 + log_f(N/M))) block transfers under sequential I/O and bounded-record assumptions. When f is Theta(M/B), this is the standard O((N/B) log_(M/B)(N/B)) bound (and assumes M >= 2B). Run generation additionally holds a decoded chunk and the hybrid's run-detection list or quicksort stack. Each merge stream has a 64 KiB text buffer; the output has another, plus a few transient decoded records during stream advancement. A completed pass deletes its input runs, so temporary runs peak at roughly two generations, each approximately the serialized data size D. For a purely illustrative average JSONL record size of 128 bytes, 100 million records would occupy about 12.8 GB per serialized copy; budget around 25.6 GB for two temporary generations, plus source, destination, and free-space headroom. Actual record sizes vary.
 
-For a 512 MB process budget, estimate decoded object and sort-workspace use from representative records and measure process RSS for several chunk sizes on the target machine; leave headroom for the interpreter, key objects, a few transient records, and f merge buffers. Choose a conservative chunk size from that measurement, and choose f so `f * 64 KiB` plus decoded heap heads and output buffering stays within the remaining budget. These are sizing steps, not a claim of measured compliance: this project did not run 100 million records or measure/enforce an OS-level 512 MB process limit.
+For a 512 MB process budget, estimate decoded object and sort-workspace use from representative records and measure process RSS for several chunk sizes on the target machine; leave headroom for the interpreter, key objects, a few transient records, and f merge buffers. Choose a conservative chunk size from that measurement, and choose f so `f * 64 KiB` plus decoded heap heads and output buffering stays within the remaining budget. These are sizing steps, not a claim of measured compliance: this project did not run 100 million records or measure/enforce an OS-level 512 MB process limit. The I/O complexity is a theoretical block-transfer count and does not establish a RAM bound or empirical memory measurement.
 
 ## Project structure
 

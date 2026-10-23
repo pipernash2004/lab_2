@@ -22,6 +22,8 @@ def main(argv=None):
     parser.add_argument("--chunk-size", type=int, default=1000)
     parser.add_argument("--merge-fan-in", type=int, default=8)
     parser.add_argument("--records", action="store_true", help="benchmark transaction records")
+    parser.add_argument("--report-csv", action="append", default=None,
+                        help="CSV filename under --output-dir to include in report (repeatable); defaults to the two three-trial primary runs")
     args = parser.parse_args(argv)
     root = Path(__file__).resolve().parent
     if args.mode in {"default", "quick", "tests"}:
@@ -42,8 +44,21 @@ def main(argv=None):
     if args.mode == "external":
         _external_demo(args)
     if args.mode == "report":
-        csvs = sorted(Path(args.output_dir).glob("benchmark_*.csv"))
-        if not csvs: parser.error("no benchmark_*.csv files found; run --mode benchmark first")
+        csv_names = args.report_csv or [
+            "benchmark_1000_seed2026_trials3.csv",
+            "benchmark_3000_seed2026_trials3.csv",
+        ]
+        csvs = [Path(args.output_dir) / name for name in csv_names]
+        missing = [str(path) for path in csvs if not path.is_file()]
+        if missing:
+            parser.error("report CSV file(s) missing: " + ", ".join(missing))
+        import csv
+        trial_counts = set()
+        for csv_path in csvs:
+            with csv_path.open(newline="", encoding="utf-8") as handle:
+                trial_counts.update(int(row["trials"]) for row in csv.DictReader(handle))
+        if len(trial_counts) != 1:
+            parser.error(f"report CSVs have mixed trial counts: {sorted(trial_counts)}; choose a consistent set")
         path = create_report(csvs, root / "docs" / "Lab_2_Algorithmic_Engineering_Report.docx")
         print(f"Report: {path}")
     return 0

@@ -1,10 +1,11 @@
 import unittest
 import tempfile
+from unittest.mock import patch
 
 from lab2.algorithms import ALGORITHMS, SortStats, heap_sort, introsort, merge_sort, timsort
 from lab2.algorithms import quick_sort_lomuto
 from lab2.benchmarking import benchmark_suite
-from lab2.datasets import adversarial_ints, generate_dataset
+from lab2.datasets import adversarial_ints, generate_dataset, transaction_key
 
 
 class SortingAlgorithmsTests(unittest.TestCase):
@@ -81,6 +82,12 @@ class SortingAlgorithmsTests(unittest.TestCase):
             if distribution == "reverse":
                 self.assertEqual(first, sorted(first, reverse=True))
 
+    def test_generated_transaction_data_contains_distinct_records_with_duplicate_keys(self):
+        records = generate_dataset(80, "random", seed=19, records=True)
+        keys = [transaction_key(record) for record in records]
+        self.assertLess(len(set(keys)), len(keys))
+        self.assertEqual(len({record["record_id"] for record in records}), len(records))
+
     def test_benchmark_counters_are_single_run_and_timsort_unavailable_is_blank(self):
         with tempfile.TemporaryDirectory() as tmp:
             _, rows = benchmark_suite(sizes=(8,), seed=7, trials=2, output_dir=tmp)
@@ -90,6 +97,18 @@ class SortingAlgorithmsTests(unittest.TestCase):
         self.assertEqual(lomuto["comparisons"], stats.comparisons)
         timsort_row = next(row for row in rows if row["algorithm"] == "timsort_baseline")
         self.assertEqual(timsort_row["comparisons"], "")
+
+    def test_benchmark_accepts_unstable_reordering_of_duplicate_transaction_keys(self):
+        tied_records = [
+            {"timestamp": 7, "amount": 25, "merchant": "Cafe", "id": identifier}
+            for identifier in ("first", "second", "third", "fourth")
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("lab2.benchmarking.generate_dataset", return_value=tied_records):
+                _, rows = benchmark_suite(sizes=(4,), seed=1, trials=1,
+                                          output_dir=tmp, include_records=True)
+        self.assertEqual(len(rows), 30)
+        self.assertTrue(all(row["status"] == "ok" for row in rows), rows)
 
 
 if __name__ == "__main__":

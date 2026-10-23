@@ -37,8 +37,11 @@ def generate_dataset(size: int, distribution: str, *, seed: int = 0,
                 values[i], values[j] = values[j], values[i]
     if not records: return values
     merchants = ("Aster", "Birch", "Cedar", "Dahlia")
-    return [{"timestamp": value, "amount": rng.randrange(1, 100_000),
-             "merchant": merchants[rng.randrange(len(merchants))], "record_id": i}
+    return [{"timestamp": value, "amount": value % 101,
+             # Deriving secondary fields from timestamp deliberately creates
+             # full duplicate sort keys whenever the input distribution has
+             # repeated timestamps; record_id still distinguishes each row.
+             "merchant": merchants[value % len(merchants)], "record_id": i}
             for i, value in enumerate(values)]
 
 

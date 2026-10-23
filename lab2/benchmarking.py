@@ -1,8 +1,10 @@
 """Correctness-first microbenchmarking and CSV result output."""
 import csv
+import json
 import statistics
 import time
 import tracemalloc
+from collections import Counter
 from pathlib import Path
 
 from .algorithms import ALGORITHMS, SortStats
@@ -11,6 +13,21 @@ from .datasets import generate_dataset
 FIELDS = ["dataset", "algorithm", "input_size", "seed", "trials", "time_unit",
           "median_seconds", "peak_python_bytes", "comparisons", "partitions",
           "max_partition_depth", "fallbacks", "status", "message"]
+
+
+def _record_fingerprint(record):
+    """Canonical representation for preserving supported int/dict records."""
+    return json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def _is_correctly_sorted_and_preserved(actual, original, key):
+    """Check order by key and preserve the full multiset, independent of ties."""
+    if len(actual) != len(original):
+        return False
+    actual_keys = [key(record) for record in actual] if key else actual
+    if any(actual_keys[i] > actual_keys[i + 1] for i in range(len(actual_keys) - 1)):
+        return False
+    return Counter(map(_record_fingerprint, actual)) == Counter(map(_record_fingerprint, original))
 
 
 def benchmark_suite(*, sizes=(1000,), seed=2026, trials=3, output_dir="results",
@@ -41,8 +58,8 @@ def benchmark_suite(*, sizes=(1000,), seed=2026, trials=3, output_dir="results",
                         actual = algorithm(sample, key=key, stats=trial_stats)
                         timings.append(time.perf_counter() - start)
                         last_trial_stats = trial_stats
-                        if actual != expected:
-                            raise ValueError("output differs from sorted() oracle")
+                        if not _is_correctly_sorted_and_preserved(actual, data, key):
+                            raise ValueError("output keys are not sorted or input records were not preserved")
                     memory_sample = data.copy()
                     tracemalloc.start()
                     algorithm(memory_sample, key=key)
@@ -70,7 +87,8 @@ def benchmark_suite(*, sizes=(1000,), seed=2026, trials=3, output_dir="results",
                         "fallbacks": stats.fallbacks, "status": "failed", "message": repr(exc)})
     directory = Path(output_dir)
     directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f"benchmark_{'-'.join(map(str, sizes))}_seed{seed}_trials{trials}.csv"
+    record_tag = "_records" if include_records else ""
+    path = directory / f"benchmark_{'-'.join(map(str, sizes))}{record_tag}_seed{seed}_trials{trials}.csv"
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=FIELDS)
         writer.writeheader(); writer.writerows(records)
